@@ -1,8 +1,11 @@
-use axum::{Router, routing::get};
+use axum::extract::State;
+use axum::routing::post;
+use axum::{Router, routing::get, Json};
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
+use rand::{distributions::Alphanumeric, Rng};
 
 type AppState = Arc<Mutex<HashMap<String, String>>>;
 
@@ -25,6 +28,7 @@ async fn main() {
 
 
     let app = Router::new().route("/", get(home_page))
+    .route("/shorten", post(shorten_url))
     .with_state(shared_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -35,6 +39,21 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn home_page() {
-    println!("Welcome to my solo URL Shortener API!")
+async fn home_page() -> &'static str {
+    "Welcome to my solo URL Shortener API!"
+}
+
+async fn shorten_url(State(state): State<AppState>,Json(payload): Json<ShortenRequest>) -> Json<ShortenResponse> {
+    let short_code: String = rand::thread_rng()
+    .sample_iter(&Alphanumeric)
+    .take(6)
+    .map(char::from)
+    .collect();
+
+    let mut map = state.lock().unwrap();
+    map.insert(short_code.clone(), payload.long_url);
+
+    let dynamic_short_url = format!("http://127.0.0.1:3000/{}", short_code);
+
+    Json(ShortenResponse { short_url: dynamic_short_url })
 }
