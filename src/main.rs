@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::http::{StatusCode, Uri};
-use axum::response::Redirect;
+use axum::response::{Html, Redirect};
 use axum::routing::post;
 use axum::{Json, Router, routing::get};
 use rand::Rng;
@@ -40,8 +40,14 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn home_page() -> &'static str {
-    "Welcome to my solo URL Shortener API!"
+async fn home_page() -> Result<Html<String>, StatusCode> {
+    match std::fs::read_to_string("templates/index.html") {
+        Ok(html_content) => Ok(Html(html_content)),
+        Err(_) => {
+            println!("❌ Error: Could not find templates/index.html file!");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn shorten_url(State(state): State<AppState>, Json(payload): Json<ShortenRequest>) -> Json<ShortenResponse> {
