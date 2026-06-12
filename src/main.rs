@@ -1,4 +1,4 @@
-
+use url::Url;
 use axum::http::{StatusCode, Uri};
 use axum::response::{Html, Redirect, IntoResponse, Response};
 use axum::routing::post;
@@ -10,7 +10,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-type AppState = Arc<Mutex<HashMap<String, String>>>;
+
 
 #[derive(Deserialize)]
 struct ShortenRequest {
@@ -24,15 +24,14 @@ struct ShortenResponse {
 
 #[tokio::main]
 async fn main() {
-    let shared_state: AppState = Arc::new(Mutex::new(HashMap::new()));
+    println!("🚀 Launching secure, validated JSON-file shortener...");
 
-    // We use .fallback() to catch all incoming GET requests manually.
-    // This completely removes Axum's internal macro matching bugs!
+    
     let app = Router::new()
         .route("/", get(home_page))
         .route("/shorten", post(shorten_url))
-        .fallback(get(redirect_to_url))
-        .with_state(shared_state);
+        .fallback(get(redirect_to_url));
+        
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
     println!("🚀 Server running smoothly at http://{}", addr);
@@ -51,7 +50,30 @@ async fn home_page() -> Result<Html<String>, StatusCode> {
     }
 }
 
-async fn shorten_url(Json(payload): Json<ShortenRequest>) -> Json<ShortenResponse> {
+async fn shorten_url(Json(payload): Json<ShortenRequest>) -> Response {
+
+    let parsed_url = match Url::parse(&payload.long_url) {
+        Ok(url) => url,
+        Err(_) => {
+         println!("⚠️ Blocked invalid URL structure: {}", payload.long_url);
+            return (StatusCode::BAD_REQUEST, "Error: Invalid URL format. Make sure it includes http:// or https://").into_response();   
+        }
+    };
+
+    if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
+       println!("⚠️ Blocked unsupported protocol: {}", parsed_url.scheme());
+        return (StatusCode::BAD_REQUEST, "Error: Only HTTP and HTTPS protocols are allowed.").into_response(); 
+    }
+
+    if let Some(host) = parsed_url.host_str() {
+        if host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0" {
+            println!("⚠️ Blocked infinite loop attempt on host: {}", host);
+            return (StatusCode::BAD_REQUEST, "Error: Cannot shorten URLs pointing back to this server.").into_response();
+        }
+    }
+
+
+
     let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::thread_rng();
 
@@ -66,13 +88,17 @@ async fn shorten_url(Json(payload): Json<ShortenRequest>) -> Json<ShortenRespons
 
     links.insert(short_code.clone(), payload.long_url.clone());
 
+    links.insert(short_code.clone(), parsed_url.to_string());
+
     if let Ok(json_string) = serde_json::to_string_pretty(&links) {
         let _ = fs::write("links.json", json_string);
         println!("💾 Saved to file: {} -> {}", short_code, payload.long_url)
     }
     
     let dynamic_short_url = format!("http://127.0.0.1:5000/{}", short_code);
-    Json(ShortenResponse { short_url: dynamic_short_url })
+    println!("💾 Safely saved validated link: {} -> {}", short_code, parsed_url);
+    let response_json = Json(ShortenResponse { short_url: dynamic_short_url });
+    (StatusCode::CREATED, response_json).into_response()
 }
 
 async fn redirect_to_url(uri: Uri) -> Response {
