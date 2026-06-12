@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+
 
 
 
@@ -102,7 +102,7 @@ async fn shorten_url(Json(payload): Json<ShortenRequest>) -> Response {
 }
 
 async fn redirect_to_url(uri: Uri) -> Response {
-    // Manually grab the code straight out of the raw web address string
+    
     let raw_path = uri.path().trim_start_matches('/');
     let search_code = raw_path.to_lowercase();
 

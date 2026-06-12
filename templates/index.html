@@ -44,18 +44,51 @@
             cursor: pointer;
             width: 96%;
             font-weight: bold;
+            transition: background 0.2s;
         }
         button:hover { background-color: #e03f4f; }
+        
+        
         .result {
             margin-top: 25px;
             padding: 15px;
             background-color: #1e1e24;
             border-radius: 6px;
-            word-break: break-all;
             display: none;
+            text-align: left;
         }
-        a { color: #4af2ff; text-decoration: none; font-weight: bold; }
-        a:hover { text-decoration: underline; }
+        .result-title {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 8px;
+        }
+        .copy-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #2a2a35;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+        .copy-box a {
+            color: #4af2ff;
+            text-decoration: none;
+            font-weight: bold;
+            word-break: break-all;
+            margin-right: 10px;
+        }
+        .copy-box a:hover { text-decoration: underline; }
+        
+        .copy-btn {
+            background-color: #444;
+            color: #fff;
+            padding: 6px 12px;
+            font-size: 13px;
+            width: auto;
+            white-space: nowrap;
+        }
+        .copy-btn:hover { background-color: #555; }
     </style>
 </head>
 <body>
@@ -68,8 +101,11 @@
     <button onclick="shortenUrl()">Shorten URL</button>
 
     <div class="result" id="resultBox">
-        Shortened Link: <br><br>
-        <a id="shortLink" href="#" target="_blank"></a>
+        <div class="result-title">Shortened Link:</div>
+        <div class="copy-box">
+            <a id="shortLink" href="#" target="_blank"></a>
+            <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">Copy</button>
+        </div>
     </div>
 </div>
 
@@ -78,31 +114,55 @@ async function shortenUrl() {
     const longUrlInput = document.getElementById('longUrl').value;
     const resultBox = document.getElementById('resultBox');
     const shortLink = document.getElementById('shortLink');
+    const copyBtn = document.getElementById('copyBtn');
 
     if (!longUrlInput) {
         alert("Please enter a valid URL!");
         return;
     }
 
+    
+    copyBtn.innerText = "Copy";
+    copyBtn.style.backgroundColor = "#444";
+
     try {
-        // 🌟 Send JSON data to your Axum /shorten backend endpoint
         const response = await fetch('/shorten', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ long_url: longUrlInput })
         });
 
-        if (!response.ok) throw new Error("Server error");
+        if (!response.ok) {
+            
+            const errorText = await response.text();
+            throw new Error(errorText || "Server error");
+        }
 
         const data = await response.json();
         
-        // Display the link returned by your server
         shortLink.href = data.short_url;
         shortLink.innerText = data.short_url;
         resultBox.style.display = 'block';
     } catch (error) {
-        alert("Failed to shorten URL. Is your Rust server running?");
+        alert(error.message);
     }
+}
+
+function copyToClipboard() {
+    const linkText = document.getElementById('shortLink').innerText;
+    const copyBtn = document.getElementById('copyBtn');
+
+    if (!linkText) return;
+
+    
+    navigator.clipboard.writeText(linkText).then(() => {
+        
+        copyBtn.innerText = "Copied!";
+        copyBtn.style.backgroundColor = "#28a745"; 
+    }).catch(err => {
+        console.error("Failed to copy text: ", err);
+        alert("Could not copy link automatically.");
+    });
 }
 </script>
 
