@@ -1,11 +1,12 @@
-use axum::extract::State;
+
 use axum::http::{StatusCode, Uri};
-use axum::response::{Html, Redirect};
+use axum::response::{Html, Redirect, IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router, routing::get};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -50,7 +51,7 @@ async fn home_page() -> Result<Html<String>, StatusCode> {
     }
 }
 
-async fn shorten_url(State(state): State<AppState>, Json(payload): Json<ShortenRequest>) -> Json<ShortenResponse> {
+async fn shorten_url(Json(payload): Json<ShortenRequest>) -> Json<ShortenResponse> {
     let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::thread_rng();
 
@@ -60,38 +61,40 @@ async fn shorten_url(State(state): State<AppState>, Json(payload): Json<ShortenR
     })
     .collect();
 
-    let mut map = state.lock().unwrap();
-    map.insert(short_code.clone(), payload.long_url);
+    let file_content = fs::read_to_string("links.json").unwrap_or_else(|_| "{}".to_string());
+    let mut links: HashMap<String, String> = serde_json::from_str(&file_content).unwrap_or_default();
 
-    // Flat, clean short link format
+    links.insert(short_code.clone(), payload.long_url.clone());
+
+    if let Ok(json_string) = serde_json::to_string_pretty(&links) {
+        let _ = fs::write("links.json", json_string);
+        println!("💾 Saved to file: {} -> {}", short_code, payload.long_url)
+    }
+    
     let dynamic_short_url = format!("http://127.0.0.1:5000/{}", short_code);
     Json(ShortenResponse { short_url: dynamic_short_url })
 }
 
-async fn redirect_to_url(State(state): State<AppState>, uri: Uri) -> Result<Redirect, StatusCode> {
+async fn redirect_to_url(uri: Uri) -> Response {
     // Manually grab the code straight out of the raw web address string
     let raw_path = uri.path().trim_start_matches('/');
     let search_code = raw_path.to_lowercase();
 
-    // Ignore browser system icon queries so they don't break our data flow
+    
     if search_code == "favicon.ico" || search_code.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
+        return StatusCode::NOT_FOUND.into_response();
     }
-
-    println!("🔍 Processing redirect for code: [{}]", search_code);
-
-    let map = state.lock().unwrap();
-    println!("📋 Current DB entries: {:?}", map.keys());
-
-    match map.get(&search_code) {
+    let file_content = fs::read_to_string("links.json").unwrap_or_else(|_| "{}".to_string());
+    let links: HashMap<String,String> = serde_json::from_str(&file_content).unwrap_or_default();
+    
+    match links.get(&search_code) {
         Some(original_url) => {
-            println!("🎯 Success! Redirecting to: {}", original_url);
-            // Passed correctly as a borrowed reference string slice (&str)
-            Ok(Redirect::to(original_url))
+            println!("🎯 Found mapping! Redirecting to: {}", original_url);
+            Redirect::to(original_url).into_response()
         }
         None => {
-            println!("⚠️ Warning: Code [{}] not found in database.", search_code);
-            Err(StatusCode::NOT_FOUND)
+            println!("⚠️ Code [{}] not found in links.json.", search_code);
+            StatusCode::NOT_FOUND.into_response()
         }
     }
 }
